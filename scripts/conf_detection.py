@@ -5,15 +5,15 @@ import os
 from datetime import datetime
 
 # Load model
-model = YOLO("KP_best2.pt")
+model = YOLO("/home/syahla/PCB_QualityControl/KP_best5.pt")
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(2, cv2.CAP_ANY)
 path = "/home/syahla/kp/0706dfa3-62ca-4803-94ee-b51bfec14bc6.jpeg"
 
 # Simpan count maksimum per class
 max_count = defaultdict(int)
 
-CONF_THRESHOLD = 0.59
+CONF_THRESHOLD = 0.5
 
 def mode_video(record=False):
     out = None
@@ -68,8 +68,18 @@ def mode_video(record=False):
                 x1,y1, x2, y2 = map(int, box.xyxy[0])
                 conf = data['conf']
                 label = f"{model.names[cls_id]}: {conf:.2f}"
-                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0,255), 2)
+                if label.startswith("No capacitor") or label.startswith("wrong component") or label.startswith("No jackcable"):
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                elif label.startswith("No resitor"): #typo pas anotasi hehehe
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(annotated, f"No resistor:{conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                elif label.startswith("Missalignment"):
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(annotated, f"Misalignment:{conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                else:
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             for cls_id, cnt in frame_count.items():
                 max_count[cls_id] = max(max_count[cls_id], cnt)
     
