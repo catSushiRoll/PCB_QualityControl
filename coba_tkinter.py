@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
 import threading
+from cam_detection import CameraDetector
 
 class PCBDetectionApp:
     def __init__(self, root):
@@ -44,7 +45,7 @@ class PCBDetectionApp:
         
         # Setup GUI
         self.setup_gui()
-        
+
     def setup_gui(self):
         # Main container
         main_frame = ttk.Frame(self.root, padding="10")
@@ -58,8 +59,8 @@ class PCBDetectionApp:
         
         self.camera_var = tk.StringVar(value="2")
         self.camera_dropdown = ttk.Combobox(camera_frame, textvariable=self.camera_var, 
-                                           values=["0", "1", "2", "3", "4"], 
-                                           width=10, state="readonly")
+                                        values=["0", "1", "2", "3", "4"], 
+                                        width=10, state="readonly")
         self.camera_dropdown.pack(side=tk.LEFT, padx=5)
         
         ttk.Label(camera_frame, text="(0=Integrated, 2=Taffware)").pack(side=tk.LEFT, padx=5)
@@ -242,7 +243,7 @@ class PCBDetectionApp:
                 
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(annotated, label, (x1, y1 - 10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
             
             # Update max count
             for cls_id, cnt in frame_count.items():
@@ -291,7 +292,7 @@ class PCBDetectionApp:
         
         if self.current_area:
             # Show only current area
-            stats_str += f"📍 {self.current_area}:\n"
+            stats_str += f"{self.current_area}:\n"
             stats_str += "-" * 40 + "\n"
             
             if self.area_counts[self.current_area]:

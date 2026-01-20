@@ -7,9 +7,9 @@ from datetime import datetime
 #BAKAL GELAP KALO = type c nyolok duluan sebelum on
 #BAKAL TERANG KALO = on dulu baru colok type c
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(2)
 date_folder = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-folder_path = os.path.join(date_folder)
+folder_path = os.path.join("..","dataset",date_folder)
 
 folder_created = False
 saved_count = 0

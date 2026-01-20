@@ -6,18 +6,17 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
 import threading
+from cam_detection import CameraDetector
 
 class PCBDetectionApp:
     def __init__(self, root):
         self.root = root
         self.root.title("PCB Quality Control Detection")
         self.root.geometry("1280x800")
-        
-        # Load model
+
         self.model = YOLO("/home/syahla/PCB_QualityControl/KP_best5.pt")
         self.CONF_THRESHOLD = 0.5
-        
-        # Video capture
+
         self.cap = None
         self.is_running = False
         self.is_recording = False
@@ -32,11 +31,16 @@ class PCBDetectionApp:
             "Area 4": defaultdict(int),
         }
         
-        # # Stats
-        # self.max_count = defaultdict(int)
+        self.max_count = defaultdict(int)
         
-        # Setup GUI
+        self.camera_devices = {}
+        self.init_camera()
         self.setup_gui()
+    
+    def init_camera(self):
+        detector = CameraDetector()
+        self.camera_list=detector.get_camera_list()
+        print(f"Detected cameras: {self.camera_list}")
         
     def setup_gui(self):
         # Main container
@@ -49,17 +53,32 @@ class PCBDetectionApp:
         
         ttk.Label(camera_frame, text="Camera Index:").pack(side=tk.LEFT, padx=5)
         
-        self.camera_var = tk.StringVar(value="2")
-        self.camera_dropdown = ttk.Combobox(camera_frame, textvariable=self.camera_var, 
-                                        values=["0", "1", "2", "3", "4"], 
-                                        width=10, state="readonly")
+        camera_names = list(self.camera_list.keys())
+        self.camera_var = tk.StringVar(value=camera_names[0] if camera_names else "No cam")
+        self.camera_dropdown = ttk.Combobox(
+            camera_frame,
+            textvariable=self.camera_var,
+            values=camera_names,
+            width=30,
+            state="readonly"
+        )
         self.camera_dropdown.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(camera_frame, text="(0=Integrated, 2=Taffware)").pack(side=tk.LEFT, padx=5)
         
         # Video display
         self.video_label = ttk.Label(main_frame, text="Video Feed", relief=tk.SUNKEN)
         self.video_label.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        #button buat per segment
+        right_panel =ttk.Frame(main_frame, width=200)
+        right_panel.grid(row=1, column=3, padx=10, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
+        area_frame = ttk.LabelFrame(right_panel, text="Area Selection", padding=10)
+        area_frame.pack(fill=tk.Y)
+        
+        self.area_buttons={}
+        for area in ["Area 1", "Area 2", "Area 3", "Area 4"]:
+            button = ttk.Button(area_frame, text=area, command=lambda a=area: self.set_current_area(a))
+            button.pack(fill=tk.X, pady=2)
+            self.area_buttons[area]=button
         
         # Control buttons
         button_frame = ttk.Frame(main_frame)
@@ -86,7 +105,7 @@ class PCBDetectionApp:
         
         # Status bar + quit button 
         self.status_label = ttk.Label(main_frame, text="Ready", relief=tk.SUNKEN)
-        self.status_label.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E))
+        self.status_label.grid(row=4, column=0, columnspan=3, padx=7,sticky=(tk.W, tk.E))
 
         self.button_quit = ttk.Button(main_frame, text="Quit", command=self.on_closing)
         self.button_quit.grid(row=4, column=1, columnspan=3, sticky=(tk.W, tk.E))
@@ -95,19 +114,25 @@ class PCBDetectionApp:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
+        main_frame.columnconfigure(3, weight=1)
         main_frame.rowconfigure(1, weight=1)
+    
+    def set_area(self,area_name):
+        self.curr_area = area_name
+        self.status_label.config(text=f"Current Area: {area_name}")
         
     def start_camera(self):
-        # Get selected camera index
-        camera_index = int(self.camera_var.get())
-        
-        if self.cap is None or not self.cap.isOpened():
-            self.cap = cv2.VideoCapture(camera_index, cv2.CAP_ANY)
-            
-            if not self.cap.isOpened():
-                self.status_label.config(text=f"Error: Cannot open camera {camera_index}!")
-                return
-        
+        camera_name = self.camera_var.get()
+        camera_index = self.camera_list.get(camera_name)
+
+        if camera_index is None:
+            self.status_label.config(text="Invalid camera selection")
+            return
+        self.cap = cv2.VideoCapture(camera_index)
+        if not self.cap.isOpened():
+            self.status_label.config(text=f"Cannot open camera {camera_index}")
+            return
+
         self.is_running = True
         self.button_start.config(state=tk.DISABLED)
         self.button_stop.config(state=tk.NORMAL)
@@ -134,7 +159,7 @@ class PCBDetectionApp:
         self.button_stop.config(state=tk.DISABLED)
         self.button_record.config(state=tk.DISABLED)
         self.button_capture.config(state=tk.DISABLED)
-        self.camera_dropdown.config(state="readonly")  # Enable dropdown lagi
+        self.camera_dropdown.config(state="readonly")
         self.status_label.config(text="Camera stopped")
     
     def toggle_recording(self):
@@ -202,12 +227,10 @@ class PCBDetectionApp:
             if not ret:
                 self.root.after(0, lambda: self.status_label.config(text="Cannot read frame"))
                 break
-            
-            # Run detection
+
             results = self.model(frame, conf=self.CONF_THRESHOLD, verbose=False)
             result = results[0]
             
-            # Get best boxes per class
             best_boxes = {}
             for box in result.boxes:
                 cls_id = int(box.cls[0])
@@ -248,11 +271,8 @@ class PCBDetectionApp:
             # Record if enabled
             if self.is_recording and self.out is not None:
                 self.out.write(annotated)
-            
-            # Convert to RGB for Tkinter
+
             frame_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-            
-            # Resize to fit display
             display_width = 1200
             height, width = frame_rgb.shape[:2]
             aspect_ratio = width / height
@@ -263,10 +283,10 @@ class PCBDetectionApp:
             img = Image.fromarray(frame_resized)
             imgtk = ImageTk.PhotoImage(image=img)
             
-            # ✅ FIX: Update GUI menggunakan after() untuk thread safety
+            # Update GUI menggunakan after() untuk thread safety
             self.root.after(0, self.update_gui, imgtk)
             
-            # ✅ FIX: Frame rate control (target ~30 FPS)
+            # Frame rate control (target ~30 FPS)
             elapsed = time.time() - start_time
             target_fps = 30
             delay = max(0, (1.0 / target_fps) - elapsed)
@@ -274,7 +294,6 @@ class PCBDetectionApp:
                 time.sleep(delay)
     
     def update_gui(self, imgtk):
-        """Update GUI elements (harus dipanggil dari main thread)"""
         if self.is_running:
             self.video_label.imgtk = imgtk
             self.video_label.configure(image=imgtk)
