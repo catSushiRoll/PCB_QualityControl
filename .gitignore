@@ -1,6 +1,9 @@
 *.avi
 *.mp4
 *.mov
+*.png
+*.jpg
+*.jpeg
 datasets/
 dataset/
 runs/
