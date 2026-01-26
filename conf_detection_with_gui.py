@@ -1,3 +1,4 @@
+from unittest import result
 from ultralytics import YOLO
 import cv2
 from collections import defaultdict
@@ -7,16 +8,27 @@ from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import threading
 import platform
+import time
+
 from cam_detection import CameraDetector
+from filtering_area import filter_detections, get_area_component_list
 
 class PCBDetectionApp:
     def __init__(self, root):
         self.root = root
         self.root.title("PCB Quality Control Detection")
-        self.root.geometry("1400x900")
 
-        self.model = YOLO("c:/Users/syahla/Downloads/content/runs/detect/train4/weights/best.pt")
-        self.CONF_THRESHOLD = 0.4
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        window_width = int(screen_width *0.7)
+        window_height = int(screen_height *0.7)
+        position_x = int((screen_width - window_width)/2)
+        position_y = int((screen_height - window_height)/2)
+
+        self.root.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+
+        self.model = YOLO("c:/Users/syahla/Downloads/2_runs_merging_yolov8_100/content/runs/detect/train/weights/best.pt")
+        self.CONF_THRESHOLD = 0.64
 
         self.cap = None
         self.is_running = False
@@ -25,23 +37,26 @@ class PCBDetectionApp:
         self.filename = None
         self.system = platform.system()
 
-        # Area tracking system
         self.current_area = None
+        self.current_area_mode = False  # TAMBAH ini
+        self.last_validation = None 
         self.area_data = {
             "Area 1": {"components": defaultdict(int), "captured": False, "timestamp": None},
             "Area 2": {"components": defaultdict(int), "captured": False, "timestamp": None},
             "Area 3": {"components": defaultdict(int), "captured": False, "timestamp": None},
             "Area 4": {"components": defaultdict(int), "captured": False, "timestamp": None},
+            "Area 5": {"components": defaultdict(int), "captured": False, "timestamp": None},
+            "Area 6": {"components": defaultdict(int), "captured": False, "timestamp": None},
+            "Area 7": {"components": defaultdict(int), "captured": False, "timestamp": None},
         }
         
-        self.max_count = defaultdict(int)  # For current frame only
+        self.max_count = defaultdict(int)  # For current frame
         
         self.camera_devices = {}
         self.init_camera()
         self.setup_gui()
     
     def init_camera(self):
-        """Inisialisasi deteksi kamera"""
         try:
             detector = CameraDetector()
             self.camera_list = detector.get_camera_list()
@@ -105,14 +120,14 @@ class PCBDetectionApp:
         self.area_buttons = {}
         self.area_status_labels = {}
         
-        for area in ["Area 1", "Area 2", "Area 3", "Area 4"]:
+        for area in ["Area 1", "Area 2", "Area 3", "Area 4", "Area 5", "Area 6", "Area 7"]:
             # Frame untuk setiap area
             area_container = ttk.Frame(area_frame)
             area_container.pack(fill=tk.X, pady=5)
             
             # Button area
             button = ttk.Button(area_container, text=area, 
-                            command=lambda a=area: self.capture_area_data(a),
+                            command=lambda a=area: self.select_area(a),
                             width=15)
             button.pack(side=tk.LEFT, padx=(0, 5))
             self.area_buttons[area] = button
@@ -123,13 +138,27 @@ class PCBDetectionApp:
             status.pack(side=tk.LEFT)
             self.area_status_labels[area] = status
         
+        expected_frame = ttk.LabelFrame(area_frame, text="Expected Components", padding=5)
+        expected_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        self.expected_text = tk.Text(expected_frame, height=6, width=25, wrap=tk.WORD, font=("Arial", 9))
+        self.expected_text.pack(fill=tk.BOTH, expand=True)
+        self.expected_text.insert(1.0, "Select an area to see\nexpected components")
+        self.expected_text.config(state=tk.DISABLED)
+
+        # Capture button untuk area yang dipilih
+        self.button_capture_area = ttk.Button(area_frame, text="📸 Capture Current Area", 
+                                        command=self.capture_area_data,
+                                        state=tk.DISABLED)
+        self.button_capture_area.pack(fill=tk.X, pady=5)
+
         # Separator
         ttk.Separator(area_frame, orient='horizontal').pack(fill=tk.X, pady=10)
         
         # Summary button
         self.button_summary = ttk.Button(area_frame, text="📊 Show Full Summary", 
                                         command=self.show_full_summary,
-                                        state=tk.DISABLED)
+                                        state=tk.NORMAL)
         self.button_summary.pack(fill=tk.X, pady=5)
         
         # Reset button
@@ -201,55 +230,102 @@ class PCBDetectionApp:
         else:
             self.status_label.config(text="No cameras found")
     
-    def capture_area_data(self, area_name):
-        """Capture dan simpan data komponen untuk area tertentu"""
+    def select_area(self,area_name):
+        """Pilih area untuk inspeksi dan tampilkan komponen yang diharapkan"""
         if not self.is_running:
             messagebox.showwarning("Warning", "Please start the camera first!")
             return
-        
+
+        self.current_area = area_name
+        self.current_area_mode = True
+
+        # Update button states - highlight yang dipilih
+        for area, button in self.area_buttons.items():
+            if area == area_name:
+                button.state(['pressed'])
+            else:
+                button.state(['!pressed'])
+
+        # Enable capture button
+        self.button_capture_area.config(state=tk.NORMAL)
+        # Show expected components
+        expected_list = get_area_component_list(area_name)
+        self.expected_text.config(state=tk.NORMAL)
+        self.expected_text.delete(1.0, tk.END)
+        self.expected_text.insert(1.0, f"Expected in {area_name}:\n\n{expected_list}")
+        self.expected_text.config(state=tk.DISABLED)
+        self.status_label.config(text=f"🎯 Inspecting {area_name} - Point camera then click Capture")
+    
+    def capture_area_data(self):  # HAPUS parameter area_name
+        """Capture dan validasi data komponen untuk area yang sedang dipilih"""
+        if not self.current_area:
+            messagebox.showwarning("Warning", "Please select an area first!")
+            return
+
+        if not self.is_running:
+            messagebox.showwarning("Warning", "Please start the camera first!")
+            return
+
         if not self.max_count:
             messagebox.showwarning("Warning", "No components detected in current frame!")
             return
-        
-        # Set current area
-        self.current_area = area_name
-        
+
+        area_name = self.current_area
+
         # Simpan data deteksi saat ini ke area
         self.area_data[area_name]["components"] = dict(self.max_count.copy())
         self.area_data[area_name]["captured"] = True
         self.area_data[area_name]["timestamp"] = datetime.now().strftime("%H:%M:%S")
-        
-        # Update status label
-        self.area_status_labels[area_name].config(
-            text="✅ Captured", 
-            foreground="green"
-        )
-        
+
+        # TAMBAH: Simpan hasil validasi jika ada
+        if self.last_validation:
+            self.area_data[area_name]["validation"] = self.last_validation
+
+        # TAMBAH: Update status berdasarkan validasi
+        if self.last_validation:
+            status = self.last_validation.get("status", "ok")
+            if status == "ok":
+                status_text = "✅ OK"
+                status_color = "green"
+            elif status == "warning":
+                status_text = "⚠️ Warning"
+                status_color = "orange"
+            else:
+                status_text = "❌ Error"
+                status_color = "red"
+
+            self.area_status_labels[area_name].config(
+                text=f"{status_text}", 
+                foreground=status_color
+            )
+        else:
+            self.area_status_labels[area_name].config(
+                text="✅ Captured", 
+                foreground="green"
+            )
+
         # Update area summary
         self.update_area_summary()
-        
+
         # Check if all areas captured
-        all_captured = all(data["captured"] for data in self.area_data.values())
-        if all_captured:
-            self.button_summary.config(state=tk.NORMAL)
-            self.status_label.config(text=f"{area_name} captured! All areas completed ✅")
-        else:
-            self.status_label.config(text=f"{area_name} data captured at {self.area_data[area_name]['timestamp']}")
-        
-        # Visual feedback
-        self.highlight_button(area_name)
+        # all_captured = all(data["captured"] for data in self.area_data.values())
+        # if all_captured:
+        #     self.button_summary.config(state=tk.NORMAL)
+        #     self.status_label.config(text=f"✅ {area_name} captured! All areas completed")
+        # else:
+        #     self.status_label.config(text=f"✅ {area_name} captured at {self.area_data[area_name]['timestamp']}")
     
-    def highlight_button(self, area_name):
-        """Highlight button yang baru di-capture"""
-        # Reset semua button
-        for area, button in self.area_buttons.items():
-            button.state(['!pressed'])
+    # def highlight_button(self, area_name):
+    #     """Highlight button yang baru di-capture"""
+    #     # Reset semua button
+    #     for area, button in self.area_buttons.items():
+    #         button.state(['!pressed'])
         
-        # Highlight button yang aktif sementara
-        self.area_buttons[area_name].state(['pressed'])
+    #     # Highlight button yang aktif sementara
+    #     self.area_buttons[area_name].state(['pressed'])
         
-        # Reset setelah 1 detik
-        self.root.after(1000, lambda: self.area_buttons[area_name].state(['!pressed']))
+    #     # Reset setelah 1 detik
+    #     self.root.after(1000, lambda: self.area_buttons[area_name].state(['!pressed']))
     
     def reset_all_areas(self):
         """Reset semua data area"""
@@ -258,17 +334,25 @@ class PCBDetectionApp:
         if not confirm:
             return
         
+        # TAMBAH baris-baris ini di bagian reset:
         for area in self.area_data.keys():
-            self.area_data[area] = {"components": defaultdict(int), "captured": False, "timestamp": None}
-            self.area_status_labels[area].config(text="⭕ Not captured", foreground="gray")
-        
+            self.area_data[area] = {"components": defaultdict(int), "captured": False, "timestamp": None, "validation": None}  # TAMBAH "validation": None
+            self.area_status_labels[area].config(text="⭕ Not inspected", foreground="gray")  # GANTI dari "Not captured"
+            self.area_buttons[area].state(['!pressed'])  # TAMBAH ini
+
         self.current_area = None
+        self.current_area_mode = False  # TAMBAH ini
+        self.last_validation = None     # TAMBAH ini
         self.button_summary.config(state=tk.DISABLED)
-        self.update_area_summary()
-        self.status_label.config(text="All areas reset")
+        self.button_capture_area.config(state=tk.DISABLED)  # TAMBAH ini
+
+        # TAMBAH ini untuk reset expected text:
+        self.expected_text.config(state=tk.NORMAL)
+        self.expected_text.delete(1.0, tk.END)
+        self.expected_text.insert(1.0, "Select an area to see\nexpected components")
+        self.expected_text.config(state=tk.DISABLED)
     
     def show_full_summary(self):
-        """Tampilkan ringkasan lengkap semua area dalam window baru"""
         summary_window = tk.Toplevel(self.root)
         summary_window.title("PCB Quality Control - Full Summary Report")
         summary_window.geometry("700x600")
@@ -318,7 +402,7 @@ class PCBDetectionApp:
         report += "=" * 70 + "\n\n"
         
         # Summary by area
-        for area in ["Area 1", "Area 2", "Area 3", "Area 4"]:
+        for area in ["Area 1", "Area 2", "Area 3", "Area 4", "Area 5", "Area 6", "Area 7"]:
             data = self.area_data[area]
             report += f"\n{'=' * 70}\n"
             report += f"{area.upper()}\n"
@@ -373,7 +457,7 @@ class PCBDetectionApp:
         report += f"{'=' * 70}\n"
         
         total_areas_inspected = sum(1 for data in self.area_data.values() if data["captured"])
-        report += f"Areas Inspected: {total_areas_inspected}/4\n"
+        report += f"Areas Inspected: {total_areas_inspected}/7\n"
         
         # Aggregate all components
         all_components = defaultdict(int)
@@ -417,7 +501,7 @@ class PCBDetectionApp:
         summary += f"Areas Captured: {captured_count}/4\n"
         summary += "=" * 50 + "\n\n"
         
-        for area in ["Area 1", "Area 2", "Area 3", "Area 4"]:
+        for area in ["Area 1", "Area 2", "Area 3", "Area 4", "Area 5", "Area 6", "Area 7"]:
             data = self.area_data[area]
             
             if data["captured"]:
@@ -473,7 +557,7 @@ class PCBDetectionApp:
         self.button_refresh.config(state=tk.DISABLED)
         self.status_label.config(text=f"Camera {camera_index} started - Click area buttons to capture data")
         
-        self.video_thread = threading.Thread(target=self.update_frame, daemon=True)
+        self.video_thread = threading.Thread(target=self.main_detection, daemon=True)
         self.video_thread.start()
     
     def stop_camera(self):
@@ -557,9 +641,7 @@ class PCBDetectionApp:
             cv2.imwrite(filename, self.current_frame)
             self.status_label.config(text=f"Captured: {filename}")
     
-    def update_frame(self):
-        import time
-        
+    def main_detection(self):
         while self.is_running:
             start_time = time.time()
             
@@ -574,8 +656,16 @@ class PCBDetectionApp:
             results = self.model(frame, conf=self.CONF_THRESHOLD, verbose=False)
             result = results[0]
             
+            if self.current_area_mode and self.current_area:
+                filtered_boxes, validation = filter_detections(self.current_area, result.boxes, self.model)
+                self.last_validation = validation  # Simpan untuk capture nanti
+                boxes_to_process = filtered_boxes
+            else:
+                boxes_to_process = result.boxes
+                self.last_validation = None
+            
             best_boxes = {}
-            for box in result.boxes:
+            for box in boxes_to_process:
                 cls_id = int(box.cls[0])
                 conf = float(box.conf[0])
                 if cls_id not in best_boxes or conf >= best_boxes[cls_id]['conf']:
@@ -592,7 +682,6 @@ class PCBDetectionApp:
                 conf = data['conf']
                 label = f"{self.model.names[cls_id]}: {conf:.2f}"
                 
-                # Deteksi defect (warna merah)
                 # if label.startswith("No capacitor") or label.startswith("wrong component") or label.startswith("No jackcable"):
                 #     cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
                 #     cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
@@ -651,45 +740,74 @@ class PCBDetectionApp:
             self.update_stats()
     
     def update_stats(self):
-        """Update current frame statistics"""
         stats_str = "=== Current Frame Detection ===\n\n"
-        
-        if self.max_count:
+
+        # Tampilkan info area jika dalam mode area
+        if self.current_area_mode and self.current_area:
+            stats_str += f"🎯 Inspecting: {self.current_area}\n"
+            stats_str += f"{'─' * 35}\n\n"
+
+            # Tampilkan hasil validasi jika ada
+            if self.last_validation:
+                val = self.last_validation
+                stats_str += f"{val['message']}\n\n"
+
+                if val.get('missing'):
+                    stats_str += "⚠️ Missing Components:\n"
+                    for item in val['missing']:
+                        stats_str += f"  • {item['component']}: need {item['expected']}, found {item['actual']}\n"
+                    stats_str += "\n"
+
+                if val.get('excess'):
+                    stats_str += "⚠️ Excess Components:\n"
+                    for item in val['excess']:
+                        stats_str += f"  • {item['component']}: need {item['expected']}, found {item['actual']}\n"
+                    stats_str += "\n"
+
+                if val.get('defects'):
+                    stats_str += "❌ Defects Detected:\n"
+                    for defect in val['defects']:
+                        stats_str += f"  • {defect['class_name']}\n"
+                    stats_str += "\n"
+
+                stats_str += "\n💡 Click 'Capture Current Area' to save"
+
+        elif self.max_count:
+            # Mode normal - tampilkan seperti biasa
             full_components = {}
             incomplete_area = {}
-            
+
             for cls_id, cnt in self.max_count.items():
                 class_name = self.model.names[cls_id]
                 if any(incomplete in class_name for incomplete in ["No "]):
                     incomplete_area[class_name] = cnt
                 else:
                     full_components[class_name] = cnt
-            
-            # Display OK
+
             if full_components:
                 stats_str += "✅ OK Components:\n"
                 for name, cnt in full_components.items():
                     stats_str += f"  • {name}: {cnt}\n"
                 stats_str += "\n"
-            
-            # Display incomplete area
+
             if incomplete_area:
                 stats_str += "❌ Incomplete components:\n"
                 for name, cnt in incomplete_area.items():
                     stats_str += f"  • {name}: {cnt}\n"
                 stats_str += "\n"
-            
-            # Total
+
             total = sum(self.max_count.values())
             defects = sum(incomplete_area.values())
             stats_str += f"{'─' * 35}\n"
             stats_str += f"Total: {total} | Defects: {defects}\n"
-            
-            stats_str += "\n💡 Click area button to save this detection"
+            stats_str += "\n💡 Select an area to start inspection"
         else:
             stats_str += "No detections in current frame\n"
-            stats_str += "\n💡 Point camera at PCB to detect components"
-        
+            if self.current_area_mode:
+                stats_str += "\n💡 Point camera at PCB area"
+            else:
+                stats_str += "\n💡 Select an area to start inspection"
+
         self.stats_text.delete(1.0, tk.END)
         self.stats_text.insert(1.0, stats_str)
     
