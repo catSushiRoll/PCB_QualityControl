@@ -1,8 +1,3 @@
-"""
-Camera Diagnostic Tool
-Jalankan script ini untuk test deteksi kamera Taffware
-"""
-
 import cv2
 import platform
 
