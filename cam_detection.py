@@ -6,10 +6,6 @@ class CameraDetector:
         self.system = platform.system()
     
     def get_camera_list(self):
-        """
-        Deteksi kamera yang tersedia di sistem
-        Return: dictionary {nama_kamera: index}
-        """
         available_cameras = {}
         
         if self.system == "Windows":
@@ -20,7 +16,6 @@ class CameraDetector:
         return available_cameras
     
     def _detect_cameras_windows(self):
-        """Deteksi kamera khusus untuk Windows dengan multiple backends"""
         cameras = {}
         max_cameras = 10
         
@@ -153,9 +148,9 @@ class CameraDetector:
         cameras = {}
         max_cameras = 10
         
-        print("\n" + "="*60)
-        print("CAMERA DETECTION - LINUX/MAC")
-        print("="*60 + "\n")
+        # print("\n" + "="*60)
+        # print("CAMERA DETECTION - LINUX/MAC")
+        # print("="*60 + "\n")
         
         for i in range(max_cameras):
             try:
@@ -179,7 +174,6 @@ class CameraDetector:
         return cameras
     
     def test_camera(self, index, backend=None):
-        """Test apakah kamera dengan index tertentu bisa dibuka"""
         try:
             if backend is not None:
                 cap = cv2.VideoCapture(index, backend)
@@ -194,28 +188,27 @@ class CameraDetector:
         except:
             return False
     
-    def get_camera_info(self, index):
-        """Dapatkan informasi detail kamera"""
-        info = {}
+    # def get_camera_info(self, index):
+    #     info = {}
         
-        backends_to_try = [cv2.CAP_DSHOW, cv2.CAP_MSMF, None] if self.system == "Windows" else [None]
+    #     backends_to_try = [cv2.CAP_DSHOW, cv2.CAP_MSMF, None] if self.system == "Windows" else [None]
         
-        for backend in backends_to_try:
-            try:
-                cap = cv2.VideoCapture(index, backend) if backend else cv2.VideoCapture(index)
+    #     for backend in backends_to_try:
+    #         try:
+    #             cap = cv2.VideoCapture(index, backend) if backend else cv2.VideoCapture(index)
                 
-                if cap.isOpened():
-                    ret, _ = cap.read()
-                    if ret:
-                        info['width'] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        info['height'] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        info['fps'] = int(cap.get(cv2.CAP_PROP_FPS))
-                        info['backend'] = backend
-                        cap.release()
-                        return info
+    #             if cap.isOpened():
+    #                 ret, _ = cap.read()
+    #                 if ret:
+    #                     info['width'] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    #                     info['height'] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    #                     info['fps'] = int(cap.get(cv2.CAP_PROP_FPS))
+    #                     info['backend'] = backend
+    #                     cap.release()
+    #                     return info
                 
-                cap.release()
-            except:
-                continue
+    #             cap.release()
+    #         except:
+    #             continue
         
-        return None
+    #     return None
