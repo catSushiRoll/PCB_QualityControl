@@ -6,6 +6,11 @@ class resistor_OCR:
     def __init__(self):
         self. reader = easyocr.Reader(['en'], gpu=False)
         self.resistor_database={
+            "Area 1":{
+                "Resistor": ["1002","1002"],
+                "footprint": ["R25", "R46"]
+            },
+
             "Area 4":{
                 "Resistor": ["1003","1003"],
                 "footprint": ["R53", "R54"]
@@ -20,56 +25,99 @@ class resistor_OCR:
             }
         }
 
-    def preprocess_ocr(self, image):
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image.copy()
+    # def preprocess_ocr(self, image):
+    #     if len(image.shape) == 3:
+    #         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    #     else:
+    #         gray = image.copy()
         
-        h, w = gray.shape
-        if h< 50 or w< 50:
-            scale = max(50/h, 50/w)
-            gray = cv2.resize(gray, None, fx=scale*2, fy=scale*2, interpolation=cv2.INTER_CUBIC)
+    #     h, w = gray.shape
+    #     if h< 50 or w< 50:
+    #         scale = max(50/h, 50/w)
+    #         gray = cv2.resize(gray, None, fx=scale*2, fy=scale*2, interpolation=cv2.INTER_CUBIC)
 
-        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-        denoised = cv2.fastNlMeansDenoising(binary, None, 30, 7, 21)
-        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-        sharpened = cv2.filter2D(denoised, -1, kernel)
-        return sharpened
+    #     binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    #     denoised = cv2.fastNlMeansDenoising(binary, None, 30, 7, 21)
+    #     kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    #     sharpened = cv2.filter2D(denoised, -1, kernel)
+    #     return sharpened
+
+    def preprocess_ocr(self, image):
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.GaussianBlur(gray, (3,3), 0)
+        return gray
+
+    
+    # def read_classify_resistor(self, bbox, frame):
+    #     x1, y1, x2, y2 = map(int, bbox)
+    #     margin = 15
+    #     y1=max(0, y1 - margin)
+    #     x1=max(0, x1 - margin)
+    #     y2=min(frame.shape[0],y2+margin)
+    #     x2=min(frame.shape[1],x2+margin)
+    #     roi = frame[y1:y2, x1:x2]
+    #     if roi.size == 0:
+    #         return None
+    #     processed = self.preprocess_ocr(roi)
+    #     try:
+    #         results = self.reader.readtext(processed, detail=1)
+            
+    #         if results:
+    #             # Ambil hasil dengan confidence tertinggi
+    #             best_result = max(results, key=lambda x: x[2])
+    #             text = best_result[1]
+    #             confidence = best_result[2]
+                
+    #             # Clean up text (hanya angka dan huruf)
+    #             cleaned = ''.join(filter(str.isalnum, text))
+                
+    #             return cleaned, confidence
+    #     except Exception as e:
+    #         print(f"OCR Error: {e}")
+        
+    #     return None, 0.0
     
     def read_classify_resistor(self, bbox, frame):
+        best = (None, 0)
+
         x1, y1, x2, y2 = map(int, bbox)
-        margin = 5
-        y1=max(0, y1 - margin)
-        x1=max(0, x1 - margin)
-        y2=min(frame.shape[0],y2+margin)
-        x2=min(frame.shape[1],x2+margin)
+        margin = 15
+        y1 = max(0, y1 - margin)
+        x1 = max(0, x1 - margin)
+        y2 = min(frame.shape[0], y2 + margin)
+        x2 = min(frame.shape[1], x2 + margin)
+
         roi = frame[y1:y2, x1:x2]
         if roi.size == 0:
-            return None
+            return None, 0
+
         processed = self.preprocess_ocr(roi)
+
         try:
             results = self.reader.readtext(processed, detail=1)
-            
-            if results:
-                # Ambil hasil dengan confidence tertinggi
-                best_result = max(results, key=lambda x: x[2])
-                text = best_result[1]
-                confidence = best_result[2]
-                
-                # Clean up text (hanya angka dan huruf)
-                cleaned = ''.join(filter(str.isalnum, text))
-                
-                return cleaned, confidence
+
+            candidates = []
+            for _, text, conf in results:
+                cleaned = "".join(filter(str.isalnum, text))
+                cleaned = (
+                    cleaned.replace("I","1")
+                            .replace("l","1")
+                            .replace("O","0")
+                            .replace("o","0")
+                )
+                if len(cleaned) >= 3 and conf > 0.4:
+                    candidates.append((cleaned, conf))
+
+            best = max(candidates, key=lambda x: x[1], default=(None, 0))
+
         except Exception as e:
             print(f"OCR Error: {e}")
-        
-        return None, 0.0
+
+        return best[0], best[1]
+
     
     def decode_resistor_marking(self, marking):
-        """
-        Decode marking code SMD ke nilai resistance
-        """
         if not marking:
             return None
         
@@ -102,7 +150,6 @@ class resistor_OCR:
         }
     
     def format_resistance(self, ohms):
-        """Format nilai resistor ke string readable"""
         if ohms is None:
             return "Unknown"
         
@@ -114,9 +161,6 @@ class resistor_OCR:
             return f"{ohms:.1f}Ω"
     
     def validate_resistor(self, area_name, marking):
-        """
-        Validasi resistor: cek apakah marking ada di list expected area
-        """
         if not marking:
             return {
                 "status": "error",
@@ -150,7 +194,6 @@ class resistor_OCR:
             except:
                 designator = "?"
             
-            # Count berapa kali marking ini muncul di expected
             count_expected = expected_markings.count(marking)
             
             return {
@@ -164,7 +207,6 @@ class resistor_OCR:
                 "decoded": decoded
             }
         else:
-            # Marking tidak sesuai
             return {
                 "status": "error",
                 "message": f"Wrong: {marking} ({decoded['value_str']})\n   Expected: {', '.join(set(expected_markings))}",
@@ -176,9 +218,6 @@ class resistor_OCR:
             }
     
     def get_area_resistor_summary(self, area_name):
-        """
-        Get summary expected resistor untuk area
-        """
         if area_name not in self.resistor_database:
             return "No resistor data for this area"
         
