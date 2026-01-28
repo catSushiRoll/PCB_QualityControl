@@ -12,7 +12,6 @@ import time
 
 from cam_detection import CameraDetector
 from filtering_area import filter_detections, get_area_component_list
-from ocr_resistor import resistor_OCR
 
 class PCBDetectionApp:
     def __init__(self, root):
@@ -40,10 +39,6 @@ class PCBDetectionApp:
         self.fps = 0.0
         self.prev_time = time.time()
 
-        # Initialize OCR
-        self.resistor_ocr = resistor_OCR()
-        self.ocr_results = {}
-
         self.current_area = None
         self.current_area_mode = False  # TAMBAH ini
         self.last_validation = None 
@@ -58,6 +53,7 @@ class PCBDetectionApp:
         }
         
         self.max_count = defaultdict(int)  # For current frame
+        
         self.camera_devices = {}
         self.init_camera()
         self.setup_gui()
@@ -111,10 +107,6 @@ class PCBDetectionApp:
         self.video_label = ttk.Label(main_frame, text="Video Feed", relief=tk.SUNKEN)
         self.video_label.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # # fps
-        # self.fps_info = ttk.Label(main_frame, text=f"FPS: 0", relief=tk.SUNKEN)
-        # self.fps_info.grid(row=1, column=2, padx=5, pady=5, sticky=(tk.W, tk.E))
-
         # Right panel - Area Selection
         right_panel = ttk.Frame(main_frame, width=250)
         right_panel.grid(row=1, column=3, padx=10, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -122,8 +114,8 @@ class PCBDetectionApp:
         fps_frame = ttk.LabelFrame(right_panel, text="FPS Info", padding=5)
         fps_frame.pack(fill=tk.X, pady=5)
         self.fps_label = ttk.Label(fps_frame, text="FPS:--", font=("Arial", 10,"bold"),foreground="blue")
-        self.fps_label.pack()
-
+        self.fps_label.pack()        
+        
         area_frame = ttk.LabelFrame(right_panel, text="Area Selection & Capture", padding=10)
         area_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -246,6 +238,7 @@ class PCBDetectionApp:
             self.status_label.config(text="No cameras found")
     
     def select_area(self,area_name):
+        """Pilih area untuk inspeksi dan tampilkan komponen yang diharapkan"""
         if not self.is_running:
             messagebox.showwarning("Warning", "Please start the camera first!")
             return
@@ -260,13 +253,10 @@ class PCBDetectionApp:
             else:
                 button.state(['!pressed'])
 
+        # Enable capture button
         self.button_capture_area.config(state=tk.NORMAL)
-
+        # Show expected components
         expected_list = get_area_component_list(area_name)
-        resistor_summary = self.resistor_ocr.get_area_resistor_summary(area_name)
-        if resistor_summary != "No resistor data for this area":
-            expected_list += "\n\n" + resistor_summary
-
         self.expected_text.config(state=tk.NORMAL)
         self.expected_text.delete(1.0, tk.END)
         self.expected_text.insert(1.0, f"Expected in {area_name}:\n\n{expected_list}")
@@ -525,11 +515,14 @@ class PCBDetectionApp:
                 summary += f"✅ {area} (at {data['timestamp']})\n"
                 
                 if data["components"]:
+                    # Count defects
                     defects = sum(count for cls_id, count in data["components"].items() 
                                 if any(d in self.model.names[cls_id] for d in ["No ", "wrong", "Missalignment"]))
                     total = sum(data["components"].values())
                     
                     summary += f"   Components: {total} | Defects: {defects}\n"
+                    
+                    # List top 3 components
                     sorted_components = sorted(data["components"].items(), key=lambda x: x[1], reverse=True)[:3]
                     for cls_id, count in sorted_components:
                         summary += f"   • {self.model.names[cls_id]}: {count}\n"
@@ -661,7 +654,7 @@ class PCBDetectionApp:
             current_time = time.time()
             self.fps = 1.0 / (current_time - self.prev_time)
             self.prev_time = current_time
-
+            
             if self.cap is None or not self.cap.isOpened():
                 break
             
@@ -675,7 +668,7 @@ class PCBDetectionApp:
             
             if self.current_area_mode and self.current_area:
                 filtered_boxes, validation = filter_detections(self.current_area, result.boxes, self.model)
-                self.last_validation = validation
+                self.last_validation = validation  # Simpan untuk capture nanti
                 boxes_to_process = filtered_boxes
             else:
                 boxes_to_process = result.boxes
@@ -697,9 +690,7 @@ class PCBDetectionApp:
                 box = data['box']
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = data['conf']
-                class_name = self.model.names[cls_id]
-                label = f"{class_name}:{conf:.2f}"
-                color = (0, 255, 0) 
+                label = f"{self.model.names[cls_id]}: {conf:.2f}"
                 
                 # if label.startswith("No capacitor") or label.startswith("wrong component") or label.startswith("No jackcable"):
                 #     cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
@@ -714,46 +705,12 @@ class PCBDetectionApp:
                 #     cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 #     cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-                # OCR buat resistor
-                if "Resistor" in class_name and "No resistor" not in class_name:
-                    bbox = [x1, y1, x2, y2]
-                    marking, ocr_conf = self.resistor_ocr.read_classify_resistor(bbox,frame)
-                    if marking and self.current_area:
-                        validation = self.resistor_ocr.validate_resistor(self.current_area, marking)
-                        if ocr_conf > 0.5:
-                            self.ocr_results[f"{cls_id}_{x1}_{y1}"]={
-                                "marking":marking,
-                                "validation":validation,
-                                "confidence":ocr_conf
-                            }
-                        decoded = validation.get("decoded")
-                        if decoded:
-                            label = f"{label}: marking ({decoded['value_str']}){conf:.2f}"
-                        else:
-                            label = f"{label}:{conf:.2f}"
-                        
-                        if validation["status"]=="ok":
-                            color = (0,255,0)
-                        elif validation["status"]=="unknown":
-                            color = (0, 165, 255)
-                        else: color= (0,0,255)
-                        # cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-                        # cv2.putText(annotated, label, (x1, y1 -10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                # elif "No resistor" in class_name:
-                    # color = (0,0,255)
-
-                
                 if any(incomplete in label for incomplete in ["No "]):
-                    # cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    # cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-                    color = (0,0,255)
-                else: 
-                    color = (0,255,0)
-                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(annotated, label, (x1, y1 -10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-            # else:
-            #         cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            #         cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                else:
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             
             self.current_frame = annotated.copy()
             
@@ -792,25 +749,15 @@ class PCBDetectionApp:
             self.video_label.configure(image=imgtk)
             self.fps_label.config(text=f"FPS: {self.fps:.1f}")
             self.update_stats()
-
     
     def update_stats(self):
-        stats_str = "=== Current Frame Detection ===\n"
+        stats_str = "=== Current Frame Detection ===\n\n"
 
+        # Tampilkan info area jika dalam mode area
         if self.current_area_mode and self.current_area:
             stats_str += f"🎯 Inspecting: {self.current_area}\n"
             stats_str += f"{'─' * 35}\n\n"
 
-            # ocr result
-            if self.ocr_results:
-                stats_str += "Resistor results:\n"
-                for cls_id, ocr_data in self.ocr_results.items():
-                    val = ocr_data["validation"]
-                    stats_str +=f"{val['message']}\n"
-                    stats_str += f"  Confidence: {ocr_data['confidence']:.2f}\n"
-                    if val.get("designator"):
-                        stats_str += f"  Position: {val['designator']}\n"
-                    stats_str += "\n"
             # Tampilkan hasil validasi jika ada
             if self.last_validation:
                 val = self.last_validation
@@ -821,7 +768,7 @@ class PCBDetectionApp:
                     for item in val['missing']:
                         stats_str += f"  • {item['component']}: need {item['expected']}, found {item['actual']}\n"
                     stats_str += "\n"
-                    
+
                 if val.get('excess'):
                     stats_str += "⚠️ Excess Components:\n"
                     for item in val['excess']:
@@ -837,6 +784,7 @@ class PCBDetectionApp:
                 stats_str += "\n💡 Click 'Capture Current Area' to save"
 
         elif self.max_count:
+            # Mode normal - tampilkan seperti biasa
             full_components = {}
             incomplete_area = {}
 

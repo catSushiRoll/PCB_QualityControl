@@ -37,8 +37,6 @@ class PCBDetectionApp:
         self.out = None
         self.filename = None
         self.system = platform.system()
-        self.fps = 0.0
-        self.prev_time = time.time()
 
         # Initialize OCR
         self.resistor_ocr = resistor_OCR()
@@ -111,19 +109,14 @@ class PCBDetectionApp:
         self.video_label = ttk.Label(main_frame, text="Video Feed", relief=tk.SUNKEN)
         self.video_label.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # # fps
-        # self.fps_info = ttk.Label(main_frame, text=f"FPS: 0", relief=tk.SUNKEN)
-        # self.fps_info.grid(row=1, column=2, padx=5, pady=5, sticky=(tk.W, tk.E))
+        # fps
+        self.fps_info = ttk.Label(main_frame, text=f"FPS: 0", relief=tk.SUNKEN)
+        self.fps_info.grid(row=1, column=2, padx=5, pady=5, sticky=(tk.W, tk.E))
 
         # Right panel - Area Selection
         right_panel = ttk.Frame(main_frame, width=250)
         right_panel.grid(row=1, column=3, padx=10, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        fps_frame = ttk.LabelFrame(right_panel, text="FPS Info", padding=5)
-        fps_frame.pack(fill=tk.X, pady=5)
-        self.fps_label = ttk.Label(fps_frame, text="FPS:--", font=("Arial", 10,"bold"),foreground="blue")
-        self.fps_label.pack()
-
         area_frame = ttk.LabelFrame(right_panel, text="Area Selection & Capture", padding=10)
         area_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -654,14 +647,16 @@ class PCBDetectionApp:
             filename = f"capture_{timestamp}.png"
             cv2.imwrite(filename, self.current_frame)
             self.status_label.config(text=f"Captured: {filename}")
+
+    def calc_fps(self, start_time, frame_count):
+        elapsed_time = time.time() - start_time
+        fps = frame_count / elapsed_time if elapsed_time > 0 else 0
+        return fps
     
     def main_detection(self):
         while self.is_running:
             start_time = time.time()
-            current_time = time.time()
-            self.fps = 1.0 / (current_time - self.prev_time)
-            self.prev_time = current_time
-
+            
             if self.cap is None or not self.cap.isOpened():
                 break
             
@@ -675,7 +670,7 @@ class PCBDetectionApp:
             
             if self.current_area_mode and self.current_area:
                 filtered_boxes, validation = filter_detections(self.current_area, result.boxes, self.model)
-                self.last_validation = validation
+                self.last_validation = validation  # Simpan untuk capture nanti
                 boxes_to_process = filtered_boxes
             else:
                 boxes_to_process = result.boxes
@@ -790,9 +785,7 @@ class PCBDetectionApp:
         if self.is_running:
             self.video_label.imgtk = imgtk
             self.video_label.configure(image=imgtk)
-            self.fps_label.config(text=f"FPS: {self.fps:.1f}")
             self.update_stats()
-
     
     def update_stats(self):
         stats_str = "=== Current Frame Detection ===\n"
