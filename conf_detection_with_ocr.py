@@ -28,7 +28,7 @@ class PCBDetectionApp:
 
         self.root.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
 
-        self.model = YOLO("c:/Users/syahla/Downloads/2_runs_merging_yolov8_100/content/runs/detect/train/weights/best.pt")
+        self.model = YOLO("c:/Users/syahla/Downloads/w5_runs_merging_yolov8_100/content/runs/detect/train/weights/best.pt")
         self.CONF_THRESHOLD = 0.64
 
         self.cap = None
@@ -45,7 +45,7 @@ class PCBDetectionApp:
         self.ocr_results = {}
 
         self.current_area = None
-        self.current_area_mode = False  # TAMBAH ini
+        self.current_area_mode = False
         self.last_validation = None 
         self.area_data = {
             "Area 1": {"components": defaultdict(int), "captured": False, "timestamp": None},
@@ -110,36 +110,57 @@ class PCBDetectionApp:
         # Video display
         self.video_label = ttk.Label(main_frame, text="Video Feed", relief=tk.SUNKEN)
         self.video_label.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-
-        # Right panel - Area Selection
-        right_panel = ttk.Frame(main_frame, width=250)
+    
+        # ===== RIGHT PANEL (FIX INI!) =====
+        right_panel = ttk.Frame(main_frame)
         right_panel.grid(row=1, column=3, padx=10, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
         
+        # Configure row weights untuk right_panel (PENTING!)
+        right_panel.rowconfigure(0, weight=0)  # FPS frame - fixed size
+        right_panel.rowconfigure(1, weight=1)  # Area frame - expandable
+        right_panel.columnconfigure(0, weight=1)
+        
+        # FPS Info (row 0 - fixed height)
         fps_frame = ttk.LabelFrame(right_panel, text="FPS Info", padding=5)
-        fps_frame.pack(fill=tk.X, pady=5)
-        self.fps_label = ttk.Label(fps_frame, text="FPS:--", font=("Arial", 10,"bold"),foreground="blue")
+        fps_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        self.fps_label = ttk.Label(fps_frame, text="FPS: --", font=("Arial", 10, "bold"), foreground="blue")
         self.fps_label.pack()
-
+    
+        # Area Selection Frame (row 1 - expandable)
         area_frame = ttk.LabelFrame(right_panel, text="Area Selection & Capture", padding=10)
-        area_frame.pack(fill=tk.BOTH, expand=True)
+        area_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Configure area_frame internal layout
+        area_frame.rowconfigure(0, weight=0)  # Info label
+        area_frame.rowconfigure(1, weight=0)  # Buttons container
+        area_frame.rowconfigure(2, weight=1)  # Expected text (expandable)
+        area_frame.rowconfigure(3, weight=0)  # Capture button
+        area_frame.rowconfigure(4, weight=0)  # Separator
+        area_frame.rowconfigure(5, weight=0)  # Summary button
+        area_frame.rowconfigure(6, weight=0)  # Reset button
+        area_frame.columnconfigure(0, weight=1)
         
         # Info label
         info_label = ttk.Label(area_frame, text="Click area button to capture\ncomponents in that area:", 
                             foreground="blue", font=("Arial", 9, "italic"))
-        info_label.pack(pady=(0, 10))
+        info_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        # Area buttons container (scrollable jika perlu)
+        buttons_container = ttk.Frame(area_frame)
+        buttons_container.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
         
         self.area_buttons = {}
         self.area_status_labels = {}
         
-        for area in ["Area 1", "Area 2", "Area 3", "Area 4", "Area 5", "Area 6", "Area 7"]:
+        for i, area in enumerate(["Area 1", "Area 2", "Area 3", "Area 4", "Area 5", "Area 6", "Area 7"]):
             # Frame untuk setiap area
-            area_container = ttk.Frame(area_frame)
-            area_container.pack(fill=tk.X, pady=5)
+            area_container = ttk.Frame(buttons_container)
+            area_container.pack(fill=tk.X, pady=2)
             
             # Button area
             button = ttk.Button(area_container, text=area, 
                             command=lambda a=area: self.select_area(a),
-                            width=15)
+                            width=12)
             button.pack(side=tk.LEFT, padx=(0, 5))
             self.area_buttons[area] = button
             
@@ -149,33 +170,46 @@ class PCBDetectionApp:
             status.pack(side=tk.LEFT)
             self.area_status_labels[area] = status
         
+        # Expected Components (expandable)
         expected_frame = ttk.LabelFrame(area_frame, text="Expected Components", padding=5)
-        expected_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-
+        expected_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        
+        expected_frame.rowconfigure(0, weight=1)
+        expected_frame.columnconfigure(0, weight=1)
+    
         self.expected_text = tk.Text(expected_frame, height=6, width=25, wrap=tk.WORD, font=("Arial", 9))
-        self.expected_text.pack(fill=tk.BOTH, expand=True)
+        self.expected_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Scrollbar untuk expected_text
+        expected_scroll = ttk.Scrollbar(expected_frame, orient=tk.VERTICAL, command=self.expected_text.yview)
+        expected_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        self.expected_text.config(yscrollcommand=expected_scroll.set)
+        
         self.expected_text.insert(1.0, "Select an area to see\nexpected components")
         self.expected_text.config(state=tk.DISABLED)
-
-        # Capture button untuk area yang dipilih
+    
+        # Capture button
         self.button_capture_area = ttk.Button(area_frame, text="📸 Capture Current Area", 
                                         command=self.capture_area_data,
                                         state=tk.DISABLED)
-        self.button_capture_area.pack(fill=tk.X, pady=5)
-
+        self.button_capture_area.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
+    
         # Separator
-        ttk.Separator(area_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        separator = ttk.Separator(area_frame, orient='horizontal')
+        separator.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=10)
         
         # Summary button
         self.button_summary = ttk.Button(area_frame, text="📊 Show Full Summary", 
                                         command=self.show_full_summary,
                                         state=tk.NORMAL)
-        self.button_summary.pack(fill=tk.X, pady=5)
+        self.button_summary.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
         
         # Reset button
         self.button_reset = ttk.Button(area_frame, text="🔄 Reset All Areas", 
                                     command=self.reset_all_areas)
-        self.button_reset.pack(fill=tk.X, pady=5)
+        self.button_reset.grid(row=6, column=0, sticky=(tk.W, tk.E))
+        
+        # ===== END RIGHT PANEL =====
         
         # Control buttons
         button_frame = ttk.Frame(main_frame)
@@ -217,18 +251,19 @@ class PCBDetectionApp:
         
         self.status_label = ttk.Label(status_container, text="Ready", relief=tk.SUNKEN)
         self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-
+    
         self.button_quit = ttk.Button(status_container, text="Quit", command=self.on_closing)
         self.button_quit.pack(side=tk.RIGHT)
         
-        # Configure grid weights
+        # ===== CONFIGURE GRID WEIGHTS (PENTING!) =====
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.columnconfigure(3, weight=0)
-        main_frame.rowconfigure(1, weight=1)
-        main_frame.rowconfigure(3, weight=0)
-    
+        
+        main_frame.columnconfigure(0, weight=1)  # Video column expandable
+        main_frame.columnconfigure(3, weight=0)  # Right panel fixed width
+        main_frame.rowconfigure(1, weight=1)     # Video row expandable
+        main_frame.rowconfigure(3, weight=0)     # Stats row fixed
+        
     def refresh_cameras(self):
         """Refresh daftar kamera yang tersedia"""
         self.status_label.config(text="Refreshing cameras...")
@@ -828,7 +863,7 @@ class PCBDetectionApp:
                         stats_str += f"  • {defect['class_name']}\n"
                     stats_str += "\n"
 
-                stats_str += "\n💡 Click 'Capture Current Area' to save"
+                stats_str += "\nClick 'Capture Current Area' to save"
 
         elif self.max_count:
             full_components = {}
