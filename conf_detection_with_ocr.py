@@ -110,10 +110,6 @@ class PCBDetectionApp:
         # Video display
         self.video_label = ttk.Label(main_frame, text="Video Feed", relief=tk.SUNKEN)
         self.video_label.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # # fps
-        # self.fps_info = ttk.Label(main_frame, text=f"FPS: 0", relief=tk.SUNKEN)
-        # self.fps_info.grid(row=1, column=2, padx=5, pady=5, sticky=(tk.W, tk.E))
 
         # Right panel - Area Selection
         right_panel = ttk.Frame(main_frame, width=250)
@@ -741,7 +737,6 @@ class PCBDetectionApp:
                         # cv2.putText(annotated, label, (x1, y1 -10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                 # elif "No resistor" in class_name:
                     # color = (0,0,255)
-
                 
                 if any(incomplete in label for incomplete in ["No "]):
                     # cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
@@ -792,7 +787,6 @@ class PCBDetectionApp:
             self.video_label.configure(image=imgtk)
             self.fps_label.config(text=f"FPS: {self.fps:.1f}")
             self.update_stats()
-
     
     def update_stats(self):
         stats_str = "=== Current Frame Detection ===\n"
