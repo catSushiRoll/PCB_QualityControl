@@ -2,8 +2,8 @@ import ultralytics
 from ultralytics import YOLO
 import cv2
 
-model = YOLO("KP_best2.pt")
-results = model(source="/home/syahla/kp/4e1d56ec-c94a-4840-8f1f-47d307dfa798.jpeg", save=False)
+model = YOLO("c:/Users/syahla/Downloads/w5_runs_merging_yolov8_100/content/runs/detect/train/weights/best.pt")
+results = model(source="c:/Users/syahla/Downloads/photo_6305086216612810761_y.jpg", save=False)
 
 annotated_images = results[0].plot()
 cv2.imshow('detection result', annotated_images)
