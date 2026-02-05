@@ -28,7 +28,7 @@ class PCBDetectionApp:
 
         self.root.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
 
-        self.model = YOLO("c:/Users/syahla/Downloads/w5_runs_merging_yolov8_100/content/runs/detect/train/weights/best.pt")
+        self.model = YOLO("weights/w5_runs_merging_yolov8_100.pt")
         self.CONF_THRESHOLD = 0.64
 
         self.cap = None
