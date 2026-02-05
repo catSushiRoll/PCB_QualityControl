@@ -80,18 +80,18 @@ class PCBDetectionApp:
                 "Camera 0 (Manual)": 0,
                 "Camera 1 (Manual)": 1,
             }
-        
+
     def setup_gui(self):
         # Main container
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Camera selection frame
+
+        # Camera selection frame (full width)
         camera_frame = ttk.LabelFrame(main_frame, text="Camera Selection", padding="5")
         camera_frame.grid(row=0, column=0, columnspan=3, padx=5, pady=5, sticky=(tk.W, tk.E))
-        
+
         ttk.Label(camera_frame, text="Camera Index:").pack(side=tk.LEFT, padx=5)
-        
+
         camera_names = list(self.camera_list.keys())
         default_camera = camera_names[0] if camera_names else "No cameras found"
         self.camera_var = tk.StringVar(value=default_camera)
@@ -103,169 +103,195 @@ class PCBDetectionApp:
             state="readonly"
         )
         self.camera_dropdown.pack(side=tk.LEFT, padx=5)
-        
+
         self.button_refresh = ttk.Button(camera_frame, text="Refresh Cameras", command=self.refresh_cameras)
         self.button_refresh.pack(side=tk.LEFT, padx=5)
-        
-        # Video display
-        self.video_label = ttk.Label(main_frame, text="Video Feed", relief=tk.SUNKEN)
-        self.video_label.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-    
-        # ===== RIGHT PANEL (FIX INI!) =====
-        right_panel = ttk.Frame(main_frame)
-        right_panel.grid(row=1, column=3, padx=10, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Configure row weights untuk right_panel (PENTING!)
-        right_panel.rowconfigure(0, weight=0)  # FPS frame - fixed size
-        right_panel.rowconfigure(1, weight=1)  # Area frame - expandable
-        right_panel.columnconfigure(0, weight=1)
-        
-        # FPS Info (row 0 - fixed height)
-        fps_frame = ttk.LabelFrame(right_panel, text="FPS Info", padding=5)
+
+        # ===== ROW 1: 3 KOLOM LAYOUT =====
+
+        # KOLOM KIRI: Video Feed
+        video_frame = ttk.LabelFrame(main_frame, text="Video Feed", padding=5)
+        video_frame.grid(row=1, column=0, padx=(5, 2), pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        self.video_label = ttk.Label(video_frame, text="Camera Preview", relief=tk.SUNKEN)
+        self.video_label.pack(fill=tk.BOTH, expand=True)
+
+        # KOLOM TENGAH: Expected Components + FPS
+        middle_panel = ttk.Frame(main_frame)
+        middle_panel.grid(row=1, column=1, padx=2, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        middle_panel.rowconfigure(0, weight=0)  # FPS - fixed
+        middle_panel.rowconfigure(1, weight=1)  # Expected - expandable
+        middle_panel.columnconfigure(0, weight=1)
+
+        # FPS Info
+        fps_frame = ttk.LabelFrame(middle_panel, text="FPS Info", padding=5)
         fps_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
-        self.fps_label = ttk.Label(fps_frame, text="FPS: --", font=("Arial", 10, "bold"), foreground="blue")
+        self.fps_label = ttk.Label(fps_frame, text="FPS: --", font=("Arial", 12, "bold"), foreground="blue")
         self.fps_label.pack()
-    
-        # Area Selection Frame (row 1 - expandable)
-        area_frame = ttk.LabelFrame(right_panel, text="Area Selection & Capture", padding=10)
-        area_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Configure area_frame internal layout
-        area_frame.rowconfigure(0, weight=0)  # Info label
-        area_frame.rowconfigure(1, weight=0)  # Buttons container
-        area_frame.rowconfigure(2, weight=1)  # Expected text (expandable)
-        area_frame.rowconfigure(3, weight=0)  # Capture button
-        area_frame.rowconfigure(4, weight=0)  # Separator
-        area_frame.rowconfigure(5, weight=0)  # Summary button
-        area_frame.rowconfigure(6, weight=0)  # Reset button
-        area_frame.columnconfigure(0, weight=1)
-        
-        # Info label
-        info_label = ttk.Label(area_frame, text="Click area button to capture\ncomponents in that area:", 
-                            foreground="blue", font=("Arial", 9, "italic"))
-        info_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
-        
-        # Area buttons container (scrollable jika perlu)
-        buttons_container = ttk.Frame(area_frame)
-        buttons_container.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
-        
-        self.area_buttons = {}
-        self.area_status_labels = {}
-        
-        for i, area in enumerate(["Area 1", "Area 2", "Area 3", "Area 4", "Area 5", "Area 6", "Area 7"]):
-            # Frame untuk setiap area
-            area_container = ttk.Frame(buttons_container)
-            area_container.pack(fill=tk.X, pady=2)
-            
-            # Button area
-            button = ttk.Button(area_container, text=area, 
-                            command=lambda a=area: self.select_area(a),
-                            width=12)
-            button.pack(side=tk.LEFT, padx=(0, 5))
-            self.area_buttons[area] = button
-            
-            # Status label
-            status = ttk.Label(area_container, text="⭕ Not captured", 
-                            foreground="gray", font=("Arial", 8))
-            status.pack(side=tk.LEFT)
-            self.area_status_labels[area] = status
-        
-        # Expected Components (expandable)
-        expected_frame = ttk.LabelFrame(area_frame, text="Expected Components", padding=5)
-        expected_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        
+
+        # Expected Components (LEBAR!)
+        expected_frame = ttk.LabelFrame(middle_panel, text="Expected Components", padding=10)
+        expected_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
         expected_frame.rowconfigure(0, weight=1)
         expected_frame.columnconfigure(0, weight=1)
-    
-        self.expected_text = tk.Text(expected_frame, height=6, width=25, wrap=tk.WORD, font=("Arial", 9))
+
+        # Text area untuk expected components
+        self.expected_text = tk.Text(expected_frame, width=40, wrap=tk.WORD, font=("Arial", 10))
         self.expected_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Scrollbar untuk expected_text
+
         expected_scroll = ttk.Scrollbar(expected_frame, orient=tk.VERTICAL, command=self.expected_text.yview)
         expected_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
         self.expected_text.config(yscrollcommand=expected_scroll.set)
-        
-        self.expected_text.insert(1.0, "Select an area to see\nexpected components")
+
+        self.expected_text.insert(1.0, "Select an area to see expected components")
         self.expected_text.config(state=tk.DISABLED)
-    
+
+        # KOLOM KANAN: Area Buttons + Actions
+        right_panel = ttk.Frame(main_frame, width=180)
+        right_panel.grid(row=1, column=2, padx=(2, 5), pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
+        right_panel.grid_propagate(False)
+
+        right_panel.rowconfigure(0, weight=0)  # Info label
+        right_panel.rowconfigure(1, weight=1)  # Area buttons (scrollable)
+        right_panel.rowconfigure(2, weight=0)  # Capture button
+        right_panel.rowconfigure(3, weight=0)  # Separator
+        right_panel.rowconfigure(4, weight=0)  # Summary button
+        right_panel.rowconfigure(5, weight=0)  # Reset button
+        right_panel.columnconfigure(0, weight=1)
+
+        # Info label
+        info_label = ttk.Label(right_panel, text="Select Area:", 
+                            foreground="blue", font=("Arial", 10, "bold"))
+        info_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+
+        # Area buttons (scrollable)
+        buttons_canvas_frame = ttk.Frame(right_panel)
+        buttons_canvas_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+
+        buttons_canvas_frame.rowconfigure(0, weight=1)
+        buttons_canvas_frame.columnconfigure(0, weight=1)
+
+        self.buttons_canvas = tk.Canvas(buttons_canvas_frame, highlightthickness=0)
+        buttons_scrollbar = ttk.Scrollbar(buttons_canvas_frame, orient="vertical", 
+                                        command=self.buttons_canvas.yview)
+        buttons_scrollable_frame = ttk.Frame(self.buttons_canvas)
+
+        buttons_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.buttons_canvas.configure(scrollregion=self.buttons_canvas.bbox("all"))
+        )
+
+        self.buttons_canvas.create_window((0, 0), window=buttons_scrollable_frame, anchor="nw")
+        self.buttons_canvas.configure(yscrollcommand=buttons_scrollbar.set)
+
+        self.buttons_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        buttons_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+
+        # Area buttons
+        self.area_buttons = {}
+        self.area_status_labels = {}
+
+        for area in ["Area 1", "Area 2", "Area 3", "Area 4", "Area 5", "Area 6", "Area 7"]:
+            area_container = ttk.Frame(buttons_scrollable_frame)
+            area_container.pack(fill=tk.X, pady=3, padx=5)
+
+            button = ttk.Button(area_container, text=area, 
+                            command=lambda a=area: self.select_area(a))
+            button.pack(fill=tk.X, pady=2)
+            self.area_buttons[area] = button
+
+            status = ttk.Label(area_container, text="⭕ Not captured", 
+                            foreground="gray", font=("Arial", 9))
+            status.pack()
+            self.area_status_labels[area] = status
+
+        # Mouse wheel scrolling
+        self.buttons_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
         # Capture button
-        self.button_capture_area = ttk.Button(area_frame, text="📸 Capture Current Area", 
+        self.button_capture_area = ttk.Button(right_panel, text="📸 Capture Current Area", 
                                         command=self.capture_area_data,
                                         state=tk.DISABLED)
-        self.button_capture_area.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
-    
+        self.button_capture_area.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+
         # Separator
-        separator = ttk.Separator(area_frame, orient='horizontal')
-        separator.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=10)
-        
+        ttk.Separator(right_panel, orient='horizontal').grid(row=3, column=0, sticky=(tk.W, tk.E), pady=10)
+
         # Summary button
-        self.button_summary = ttk.Button(area_frame, text="📊 Show Full Summary", 
+        self.button_summary = ttk.Button(right_panel, text="📊 Show Full Summary", 
                                         command=self.show_full_summary,
                                         state=tk.NORMAL)
-        self.button_summary.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
-        
+        self.button_summary.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+
         # Reset button
-        self.button_reset = ttk.Button(area_frame, text="🔄 Reset All Areas", 
+        self.button_reset = ttk.Button(right_panel, text="🔄 Reset All Areas", 
                                     command=self.reset_all_areas)
-        self.button_reset.grid(row=6, column=0, sticky=(tk.W, tk.E))
-        
-        # ===== END RIGHT PANEL =====
-        
-        # Control buttons
+        self.button_reset.grid(row=5, column=0, sticky=(tk.W, tk.E))
+
+        # ===== ROW 2: Control buttons (full width) =====
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=2, column=0, columnspan=3, pady=10)
-        
+
         self.button_start = ttk.Button(button_frame, text="Start Camera", command=self.start_camera)
         self.button_start.pack(side=tk.LEFT, padx=5)
-        
+
         self.button_stop = ttk.Button(button_frame, text="Stop Camera", command=self.stop_camera, state=tk.DISABLED)
         self.button_stop.pack(side=tk.LEFT, padx=5)
-        
+
         self.button_record = ttk.Button(button_frame, text="Start Recording", command=self.toggle_recording, state=tk.DISABLED)
         self.button_record.pack(side=tk.LEFT, padx=5)
-        
+
         self.button_capture = ttk.Button(button_frame, text="Capture Frame", command=self.capture_frame, state=tk.DISABLED)
         self.button_capture.pack(side=tk.LEFT, padx=5)
-        
-        # Stats panel - Split into two columns
+
+        # ===== ROW 3: Stats panel (full width, 2 columns) =====
         stats_container = ttk.Frame(main_frame)
-        stats_container.grid(row=3, column=0, columnspan=4, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
+        stats_container.grid(row=3, column=0, columnspan=3, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
+
         # Left: Current Detection
         current_stats_frame = ttk.LabelFrame(stats_container, text="Current Frame Detection", padding="10")
         current_stats_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-        
+
         self.stats_text = tk.Text(current_stats_frame, height=8, width=50)
         self.stats_text.pack(fill=tk.BOTH, expand=True)
-        
+
         # Right: Area Summary
         area_stats_frame = ttk.LabelFrame(stats_container, text="Captured Areas Summary", padding="10")
         area_stats_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
-        
+
         self.area_stats_text = tk.Text(area_stats_frame, height=8, width=50)
         self.area_stats_text.pack(fill=tk.BOTH, expand=True)
-        
-        # Status bar
+
+        # ===== ROW 4: Status bar (full width) =====
         status_container = ttk.Frame(main_frame)
-        status_container.grid(row=4, column=0, columnspan=4, sticky=(tk.W, tk.E))
-        
+        status_container.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E))
+
         self.status_label = ttk.Label(status_container, text="Ready", relief=tk.SUNKEN)
         self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-    
+
         self.button_quit = ttk.Button(status_container, text="Quit", command=self.on_closing)
         self.button_quit.pack(side=tk.RIGHT)
-        
-        # ===== CONFIGURE GRID WEIGHTS (PENTING!) =====
+
+        # ===== CONFIGURE GRID WEIGHTS =====
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        
-        main_frame.columnconfigure(0, weight=1)  # Video column expandable
-        main_frame.columnconfigure(3, weight=0)  # Right panel fixed width
-        main_frame.rowconfigure(1, weight=1)     # Video row expandable
-        main_frame.rowconfigure(3, weight=0)     # Stats row fixed
-        
+
+        # Column weights: Video (60%) | Middle (30%) | Right (10%)
+        main_frame.columnconfigure(0, weight=7)  # Video - 60%
+        main_frame.columnconfigure(1, weight=3)  # Middle - 30%
+        main_frame.columnconfigure(2, weight=0)  # Right - 10%
+
+        # Row weights
+        main_frame.rowconfigure(1, weight=1)  # Main content row (expandable)
+        main_frame.rowconfigure(3, weight=0)  # Stats row (fixed)
+
+    # Method untuk mouse wheel scrolling
+    def _on_mousewheel(self, event):
+        self.buttons_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
     def refresh_cameras(self):
-        """Refresh daftar kamera yang tersedia"""
         self.status_label.config(text="Refreshing cameras...")
         self.init_camera()
         camera_names = list(self.camera_list.keys())
